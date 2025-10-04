@@ -22,7 +22,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 4.61.0
+          terraform_version: 1.7.5
 
       - name: Terraform Init
         id: init
@@ -40,7 +40,7 @@ jobs:
           TF_VAR_environment: staging # Example: pass a variable for staging environment
 
       - name: Terraform Apply
-        id: apply
+        id: apply0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve -input=false
         env:
