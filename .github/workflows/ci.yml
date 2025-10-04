@@ -1,116 +1,47 @@
-# .github/workflows/terraform_full.yml
-
-name: 'Full Terraform Workflow (CI/CD)'
+name: Terraform CI/CD
 
 on:
-  # Trigger the 'plan' job on any Pull Request targeting the main branch
-  pull_request:
-    branches:
-      - main
-  # Trigger the 'apply' job only on a direct push/merge to the main branch
   push:
     branches:
       - main
-
-# Define permissions for OIDC (secure cloud authentication)
-permissions:
-  contents: read
-  id-token: write # Required for assuming the AWS IAM Role
-
-# --- Environment Variables ---
-env:
-  TF_VERSION: '1.6.5' # Specify the exact Terraform version
-  # Replace with your target cloud details
-  AWS_REGION: 'us-east-1'
-  AWS_ROLE_ARN: ${{ secrets.AWS_IAM_ROLE_ARN }} 
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  # ----------------------------------------------------
-  # JOB 1: Continuous Integration (CI) - Init, Validate, Plan
-  # Runs on every Pull Request
-  # ----------------------------------------------------
-  ci_plan:
-    name: 'CI: Plan and Validate'
+  terraform:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      # Add other environment variables as needed for your cloud provider
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ env.TF_VERSION }}
-          
-      - name: Configure AWS Credentials (OIDC)
-        # Authenticates the runner using the IAM role and OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          terraform_version: 4.61.0
 
-      - name: 1. Terraform Init
+      - name: Terraform Init
         id: init
         run: terraform init
 
-      - name: 2. Terraform Validate
+      - name: Terraform Validate
         id: validate
         run: terraform validate
 
-      - name: 3. Terraform Plan
+      - name: Terraform Plan
         id: plan
-        # Generates an execution plan and saves it to a file
-        run: terraform plan -no-color -input=false -out=tfplan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color -input=false
+        env:
+          TF_VAR_environment: staging # Example: pass a variable for staging environment
 
-      - name: Upload Terraform Plan Artifact
-        # Saves the plan file to be used by the 'cd_apply' job
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan
-          path: tfplan
-
-  # ----------------------------------------------------
-  # JOB 2: Continuous Deployment (CD) - Apply and Output
-  # Runs only on push/merge to the main branch
-  # ----------------------------------------------------
-  cd_apply:
-    name: 'CD: Apply and Output'
-    runs-on: ubuntu-latest
-    needs: [ci_plan] # Depends on the plan job successfully completing
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Download Terraform Plan Artifact
-        # Retrieves the approved plan file from the 'ci_plan' job
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan
-
-      - name: 4. Terraform Init
-        # Must run 'init' again to prepare the environment for 'apply'
-        run: terraform init
-
-      - name: 5. Terraform Apply
+      - name: Terraform Apply
         id: apply
-        # Executes the saved plan file, ensuring only approved changes are applied
-        run: terraform apply -input=false tfplan
-        
-      - name: 6. Terraform Output
-        id: output
-        # Retrieves and prints the value of defined outputs (e.g., Load Balancer DNS)
-        run: terraform output -json
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve -input=false
+        env:
+          TF_VAR_environment: production # Example: pass a variable for production environment
